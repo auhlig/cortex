@@ -82,10 +82,10 @@ type scheduler struct {
 
 	pollInterval time.Duration
 	lastPolled   time.Time
-	pollMutex    sync.RWMutex
+	pollMutex    *sync.RWMutex
 
-	quit chan struct{}
-	wait sync.WaitGroup
+	done       chan struct{}
+	terminated chan struct{}
 }
 
 // newScheduler makes a new scheduler.
@@ -102,8 +102,7 @@ func newScheduler(configsAPI configsAPI, evaluationInterval, pollInterval time.D
 // Run polls the source of configurations for changes.
 func (s *scheduler) Run() {
 	log.Debugf("Scheduler started")
-	s.wait.Add(1)
-	defer s.wait.Done()
+	defer close(s.terminated)
 	// Load initial set of all configurations before polling for new ones.
 	s.addNewConfigs(time.Now(), s.loadAllConfigs())
 	ticker := time.NewTicker(s.pollInterval)
@@ -114,16 +113,16 @@ func (s *scheduler) Run() {
 			if err != nil {
 				log.Warnf("Error updating configs: %v", err)
 			}
-		case <-s.quit:
+		case <-s.done:
 			ticker.Stop()
 		}
 	}
 }
 
 func (s *scheduler) Stop() {
-	close(s.quit)
+	close(s.done)
 	s.q.Close()
-	s.wait.Wait()
+	<-s.terminated
 	log.Debugf("Scheduler stopped")
 }
 

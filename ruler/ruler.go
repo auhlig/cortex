@@ -61,18 +61,15 @@ func NewRuler(d *distributor.Distributor, c chunk.Store, alertURL *url.URL) Rule
 	return Ruler{querier.NewEngine(d, c), d, alertURL}
 }
 
-func (r *Ruler) getManagerOptions(ctx context.Context) *rules.ManagerOptions {
+func (r *Ruler) newGroup(ctx context.Context, delay time.Duration, rs []rules.Rule) *rules.Group {
 	appender := appenderAdapter{appender: r.appender, ctx: ctx}
-	return &rules.ManagerOptions{
+	opts := &rules.ManagerOptions{
 		SampleAppender: appender,
 		QueryEngine:    r.engine,
 		Context:        ctx,
 		ExternalURL:    r.alertURL,
 	}
-}
-
-func (r *Ruler) newGroup(ctx context.Context, delay time.Duration, rs []rules.Rule) *rules.Group {
-	return rules.NewGroup("default", delay, rs, r.getManagerOptions(ctx))
+	return rules.NewGroup("default", delay, rs, opts)
 }
 
 // Evaluate a list of rules in the given context.
@@ -89,13 +86,14 @@ func (r *Ruler) Evaluate(ctx context.Context, rs []rules.Rule) {
 	rulesProcessed.Add(float64(len(rs)))
 }
 
-type server struct {
+// Server is a rules server.
+type Server struct {
 	scheduler *scheduler
 	workers   []worker
 }
 
 // NewServer makes a new rule processing server.
-func NewServer(cfg Config, ruler Ruler) (Worker, error) {
+func NewServer(cfg Config, ruler Ruler) (*Server, error) {
 	configsAPIURL, err := url.Parse(cfg.ConfigsAPIURL)
 	if err != nil {
 		return nil, err
@@ -117,7 +115,8 @@ func NewServer(cfg Config, ruler Ruler) (Worker, error) {
 	}, nil
 }
 
-func (s *server) Run() {
+// Run the server.
+func (s *Server) Run() {
 	go s.scheduler.Run()
 	for _, w := range s.workers {
 		go w.Run()
@@ -125,7 +124,8 @@ func (s *server) Run() {
 	log.Infof("Ruler up and running")
 }
 
-func (s *server) Stop() {
+// Stop the server.
+func (s *Server) Stop() {
 	for _, w := range s.workers {
 		w.Stop()
 	}

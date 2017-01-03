@@ -13,13 +13,28 @@ import (
 
 // TODO: Extract configs client logic into go client library (ala users)
 
+type configID int
+
 type cortexConfig struct {
+	ConfigID
 	RulesFiles map[string]string `json:"rules_files"`
 }
 
-// Response from server for getOrgConfigs
+// cortexConfigsResponse is a response from server for getOrgConfigs
 type cortexConfigsResponse struct {
+	// Configs maps organization ID to their latest cortexConfig.
 	Configs map[string]cortexConfig `json:"configs"`
+}
+
+// getLatestConfigID returns the last config ID from a set of configs.
+func getLatestConfigID(configs map[string]cortexConfig) int {
+	latest := 0
+	for _, config := range configs {
+		if config.ConfigID > latest {
+			latest = config.ConfigID
+		}
+	}
+	return latest
 }
 
 // Get the rules from the cortex configuration.
@@ -44,7 +59,7 @@ func (c cortexConfig) GetRules() ([]rules.Rule, error) {
 				rule = rules.NewRecordingRule(r.Name, r.Expr, r.Labels)
 
 			default:
-				panic("ruler.loadRules: unknown statement type")
+				return nil, fmt.Errorf("ruler.GetRules: unknown statement type")
 			}
 			result = append(result, rule)
 		}
@@ -59,11 +74,9 @@ type configsAPI struct {
 // getOrgConfigs returns all Cortex configurations from a configs api server
 // that have been updated since the given time.
 func (c *configsAPI) getOrgConfigs(since time.Duration) (map[string]cortexConfig, error) {
-	var suffix string
+	suffix := ""
 	if since == 0 {
 		suffix = fmt.Sprintf("?since=%s", since)
-	} else {
-		suffix = ""
 	}
 	url := fmt.Sprintf("%s/private/api/configs/org/cortex%s", c.url.String(), suffix)
 	req, err := http.NewRequest("GET", url, nil)
